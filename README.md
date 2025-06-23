@@ -15,4 +15,4 @@ Future Updates:
 2. Cleaner entire Mid-ranges as possible, more "Limiter Sustain" for mids only
 3. A little bit of Wet Reverb as a secondary Layer copy of the same track, so not interfere with main untouched master track.
 4. Fixing CPU-made clipping unwanted sounds that are not synced to the actual BPM.
-5. New separated repository of .ssaf music player
+5. Upgrading Player UI
