@@ -1,0 +1,78 @@
+# .gitignore for TRS Mod Tool Backup
+
+# Temporary files
+*.tmp
+*.temp
+*~
+.DS_Store
+Thumbs.db
+
+# Build outputs
+*.obj
+*.o
+*.exe
+*.dll
+*.lib
+*.exp
+*.pdb
+*.idb
+*.ilk
+
+# Visual Studio
+*.sdf
+*.opensdf
+*.vcxproj.user
+*.vcproj.user
+.vs/
+Debug/
+Release/
+x64/
+Win32/
+
+# DirectX compiled shaders
+*.fxc
+*.cso
+*.fx.cache
+
+# Large asset files (add these manually to specific folders)
+*.psd
+*.max
+*.blend
+*.ma
+*.mb
+
+# User-specific configuration
+user_settings.ini
+recent_files.cfg
+workspace.layout
+
+# Log files
+*.log
+error.txt
+debug.txt
+
+# Backup files
+*.bak
+*.backup
+*_backup_*
+
+# Phone transfer temporary files
+/phone_transfer/
+*.zip.tmp
+
+# IDE specific
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+ehthumbs.db
+Desktop.ini
+
+# Keep important empty directories
+!*/
+!*/.gitkeep
