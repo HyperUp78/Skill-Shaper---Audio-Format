@@ -20,14 +20,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- App Icon -->
-    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#111318" />
+    <!-- App Icon (no foreground layer, simpler single-file icon) -->
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" Color="#111318" />
     <!-- Splash Screen -->
     <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#111318" BaseSize="128,128" />
-    <!-- Fonts -->
-    <MauiFont Include="Resources\Fonts\*" />
-    <!-- Raw Assets -->
-    <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
