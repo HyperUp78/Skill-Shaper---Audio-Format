@@ -21,9 +21,14 @@ public partial class MainPage : ContentPage
     private CancellationTokenSource? _autoMixCts;
     private readonly Queue<int> _nextDeckOrder = new();
 
-    private const double TransitionCycleBars = 24;
-    private const double CrossfadeBars = 4;
-    private const double AutoLoopBars = 1;
+    private const double PhraseBars = 16;
+    private const double FeatureFadeBars = 8;
+    private const double AutoLoopBars = 2;
+
+    private const double LeadGain = 1.0;
+    private const double SupportGain = 0.62;
+    private const double MidBedGain = 0.42;
+    private const double LowBedGain = 0.28;
 
     public MainPage()
     {
@@ -168,7 +173,7 @@ public partial class MainPage : ContentPage
                 await EnsureDeckLoadedAsync(next, _deckUi[next.DeckId].TitleLabel);
                 var masterBpm = GetMasterBpm();
                 ApplyAutoLoopForTransition(deck, next, masterBpm);
-                await SmoothTransitionAsync(deck, next, masterBpm, CancellationToken.None);
+                await SmoothRoleTransitionAsync(deck, next, masterBpm, CancellationToken.None);
                 deck.DisableLoop();
                 next.DisableLoop();
             };
@@ -256,24 +261,25 @@ public partial class MainPage : ContentPage
         foreach (var deck in _decks)
         {
             await EnsureDeckLoadedAsync(deck, _deckUi[deck.DeckId].TitleLabel, forceMidTrackStart: true);
-            deck.SetMixGain(deck.DeckId == 1 ? 1 : 0);
             if (!deck.IsPlaying)
             {
                 deck.Play();
             }
         }
 
-        var currentDeck = _decks[0];
+        var currentLead = _decks[0];
+        ApplyRoleGains(currentLead);
 
         while (!token.IsCancellationRequested)
         {
             var masterBpm = GetMasterBpm();
-            var cycleDelayMs = BarsToMilliseconds(TransitionCycleBars, masterBpm);
+            var cycleDelayMs = BarsToMilliseconds(PhraseBars, masterBpm);
             await Task.Delay(TimeSpan.FromMilliseconds(cycleDelayMs), token);
 
-            await EnsureBackgroundDecksRunningAsync(currentDeck);
+            await EnsureBackgroundDecksRunningAsync(currentLead);
+            await RefreshDecksNearTrackEndAsync(currentLead);
 
-            var nextDeck = GetNextDeckInRandomRotation(currentDeck);
+            var nextDeck = GetNextDeckInRandomRotation(currentLead);
             await EnsureDeckLoadedAsync(nextDeck, _deckUi[nextDeck.DeckId].TitleLabel, forceMidTrackStart: false);
 
             if (!nextDeck.IsPlaying)
@@ -281,35 +287,38 @@ public partial class MainPage : ContentPage
                 nextDeck.Play();
             }
 
-            ApplyAutoLoopForTransition(currentDeck, nextDeck, masterBpm);
+            ApplyAutoLoopForTransition(currentLead, nextDeck, masterBpm);
 
-            StatusLabel.Text = $"Transitioning Deck {currentDeck.DeckId} -> Deck {nextDeck.DeckId}";
-            await SmoothTransitionAsync(currentDeck, nextDeck, masterBpm, token);
+            StatusLabel.Text = $"Phrase mix Deck {currentLead.DeckId} -> Deck {nextDeck.DeckId}";
+            await SmoothRoleTransitionAsync(currentLead, nextDeck, masterBpm, token);
 
-            currentDeck.DisableLoop();
+            currentLead.DisableLoop();
             nextDeck.DisableLoop();
 
-            await LoadRandomIntoDeckAsync(currentDeck, _deckUi[currentDeck.DeckId].TitleLabel, true, forceMidTrackStart: true);
-            currentDeck.SetMixGain(0);
-            currentDeck = nextDeck;
+            currentLead = nextDeck;
         }
     }
 
-    private async Task SmoothTransitionAsync(DeckController fromDeck, DeckController toDeck, double masterBpm, CancellationToken token)
+    private async Task SmoothRoleTransitionAsync(DeckController fromDeck, DeckController toDeck, double masterBpm, CancellationToken token)
     {
-        toDeck.SetMixGain(0);
-        toDeck.Play();
+        var startGains = BuildRoleGainMap(fromDeck);
+        var targetGains = BuildRoleGainMap(toDeck);
 
-        const int steps = 40;
-        var totalFadeMs = BarsToMilliseconds(CrossfadeBars, masterBpm);
+        const int steps = 64;
+        var totalFadeMs = BarsToMilliseconds(FeatureFadeBars, masterBpm);
         var stepDelayMs = Math.Max(35, totalFadeMs / steps);
 
         for (var i = 0; i <= steps; i++)
         {
             token.ThrowIfCancellationRequested();
             var p = i / (double)steps;
-            fromDeck.SetMixGain(1 - p);
-            toDeck.SetMixGain(p);
+
+            foreach (var deck in _decks)
+            {
+                var startGain = startGains[deck.DeckId];
+                var endGain = targetGains[deck.DeckId];
+                deck.SetMixGain(startGain + ((endGain - startGain) * p));
+            }
 
             fromDeck.ApplyTransitionEq(1 - p);
             toDeck.ApplyTransitionEq(p);
@@ -317,8 +326,7 @@ public partial class MainPage : ContentPage
             await Task.Delay(stepDelayMs, token);
         }
 
-        fromDeck.SetMixGain(0);
-        toDeck.SetMixGain(1);
+        ApplyRoleGains(toDeck);
     }
 
     private async Task EnsureDeckLoadedAsync(DeckController deck, Label titleLabel, bool forceMidTrackStart = false)
@@ -338,7 +346,23 @@ public partial class MainPage : ContentPage
         }
 
         var previousPath = deck.CurrentTrack?.Path;
-        var candidatePool = _library.Where(t => !string.Equals(t.Path, previousPath, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var activeDeckPaths = _decks
+            .Where(d => d.DeckId != deck.DeckId)
+            .Select(d => d.CurrentTrack?.Path)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var candidatePool = _library
+            .Where(t => !string.Equals(t.Path, previousPath, StringComparison.OrdinalIgnoreCase))
+            .Where(t => !activeDeckPaths.Contains(t.Path))
+            .ToList();
+
+        if (candidatePool.Count == 0)
+        {
+            candidatePool = _library.Where(t => !string.Equals(t.Path, previousPath, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
         if (candidatePool.Count == 0)
         {
             candidatePool = _library;
@@ -367,8 +391,8 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        var minStart = (int)(durationMs * 0.22);
-        var maxStart = (int)(durationMs * 0.62);
+        var minStart = (int)(durationMs * 0.35);
+        var maxStart = (int)(durationMs * 0.82);
 
         if (maxStart <= minStart)
         {
@@ -391,9 +415,35 @@ public partial class MainPage : ContentPage
             if (deck.CurrentTrack is null || !deck.IsPlaying)
             {
                 await LoadRandomIntoDeckAsync(deck, _deckUi[deck.DeckId].TitleLabel, true, forceMidTrackStart: true);
-                deck.SetMixGain(0);
             }
         }
+    }
+
+    private async Task RefreshDecksNearTrackEndAsync(DeckController leadDeck)
+    {
+        foreach (var deck in _decks)
+        {
+            if (deck.DeckId == leadDeck.DeckId)
+            {
+                continue;
+            }
+
+            if (IsNearTrackEnd(deck, thresholdMs: 45_000))
+            {
+                await LoadRandomIntoDeckAsync(deck, _deckUi[deck.DeckId].TitleLabel, true, forceMidTrackStart: true);
+            }
+        }
+    }
+
+    private static bool IsNearTrackEnd(DeckController deck, int thresholdMs)
+    {
+        var duration = deck.GetDurationMs();
+        if (duration <= 0)
+        {
+            return false;
+        }
+
+        return (duration - deck.GetCurrentPositionMs()) <= thresholdMs;
     }
 
     private DeckController GetNextDeckInRandomRotation(DeckController currentDeck)
@@ -432,6 +482,35 @@ public partial class MainPage : ContentPage
 
         fromDeck.SetLoopWindow(fromStart, loopLengthMs, Dispatcher);
         toDeck.SetLoopWindow(toStart, loopLengthMs, Dispatcher);
+    }
+
+    private Dictionary<int, double> BuildRoleGainMap(DeckController leadDeck)
+    {
+        var leadIndex = Array.FindIndex(_decks, d => d.DeckId == leadDeck.DeckId);
+        if (leadIndex < 0)
+        {
+            leadIndex = 0;
+        }
+
+        var gains = new Dictionary<int, double>(_decks.Length);
+        gains[_decks[leadIndex].DeckId] = LeadGain;
+        gains[_decks[(leadIndex + 1) % _decks.Length].DeckId] = SupportGain;
+        gains[_decks[(leadIndex + 2) % _decks.Length].DeckId] = MidBedGain;
+        gains[_decks[(leadIndex + 3) % _decks.Length].DeckId] = LowBedGain;
+
+        return gains;
+    }
+
+    private void ApplyRoleGains(DeckController leadDeck)
+    {
+        var roleGains = BuildRoleGainMap(leadDeck);
+        foreach (var deck in _decks)
+        {
+            if (roleGains.TryGetValue(deck.DeckId, out var gain))
+            {
+                deck.SetMixGain(gain);
+            }
+        }
     }
 
     private double GetMasterBpm()
