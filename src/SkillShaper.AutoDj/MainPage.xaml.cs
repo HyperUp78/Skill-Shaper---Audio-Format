@@ -20,6 +20,7 @@ public partial class MainPage : ContentPage
     private List<TrackInfo> _library = [];
     private CancellationTokenSource? _autoMixCts;
     private readonly Queue<int> _nextDeckOrder = new();
+    private bool _uiBuilt;
 
     private const double PhraseBars = 8;
     private const double FeatureFadeBars = 4;
@@ -34,14 +35,28 @@ public partial class MainPage : ContentPage
     public MainPage()
     {
         InitializeComponent();
+    }
+
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+
+        if (_uiBuilt)
+        {
+            return;
+        }
 
         try
         {
             BuildDeckUi();
+            _uiBuilt = true;
         }
         catch (Exception ex)
         {
-            StatusLabel.Text = $"UI init error: {ex.GetType().Name} - {ex.Message}";
+            if (StatusLabel is not null)
+            {
+                StatusLabel.Text = $"UI init error: {ex.GetType().Name} - {ex.Message}";
+            }
         }
     }
 

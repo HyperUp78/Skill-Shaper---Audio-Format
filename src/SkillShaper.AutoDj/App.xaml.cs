@@ -4,30 +4,80 @@ public partial class App : Application
 {
     public App()
     {
-        try
+        InitializeComponent();
+    }
+
+    protected override Window CreateWindow(IActivationState? activationState)
+    {
+        return new Window(CreateSafeLauncherPage());
+    }
+
+    private Page CreateSafeLauncherPage()
+    {
+        var statusLabel = new Label
         {
-            InitializeComponent();
-            MainPage = new NavigationPage(new MainPage())
+            Text = "Initializing...",
+            TextColor = Colors.White,
+            FontSize = 12
+        };
+
+        var launchButton = new Button
+        {
+            Text = "Launch Mixer"
+        };
+
+        async Task LaunchAsync()
+        {
+            try
             {
-                BarBackgroundColor = Color.FromArgb("#111318"),
-                BarTextColor = Colors.White
-            };
+                var page = new NavigationPage(new MainPage())
+                {
+                    BarBackgroundColor = Color.FromArgb("#111318"),
+                    BarTextColor = Colors.White
+                };
+
+                if (Windows.Count > 0)
+                {
+                    Windows[0].Page = page;
+                }
+            }
+            catch (Exception ex)
+            {
+                statusLabel.Text = $"Startup failure: {ex.GetType().Name} - {ex.Message}";
+            }
         }
-        catch (Exception ex)
+
+        launchButton.Clicked += async (_, _) => await LaunchAsync();
+
+        var launcher = new ContentPage
         {
-            MainPage = new ContentPage
+            Title = "SkillShaper AutoDJ",
+            BackgroundColor = Color.FromArgb("#111318"),
+            Content = new VerticalStackLayout
             {
                 Padding = new Thickness(16),
-                Content = new ScrollView
+                Spacing = 12,
+                Children =
                 {
-                    Content = new Label
+                    new Label
                     {
-                        Text = $"Startup failure: {ex.GetType().Name}\n{ex.Message}\n\n{ex.StackTrace}",
+                        Text = "SkillShaper AutoDJ",
+                        FontAttributes = FontAttributes.Bold,
+                        FontSize = 24,
                         TextColor = Colors.White
-                    }
-                },
-                BackgroundColor = Color.FromArgb("#111318")
-            };
-        }
+                    },
+                    new Label
+                    {
+                        Text = "Safe startup mode is active.",
+                        TextColor = Color.FromArgb("#CBD5E0")
+                    },
+                    launchButton,
+                    statusLabel
+                }
+            }
+        };
+
+        launcher.Loaded += async (_, _) => await LaunchAsync();
+        return launcher;
     }
 }
