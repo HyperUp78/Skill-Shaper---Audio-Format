@@ -77,7 +77,6 @@ public partial class App : Application
             }
         };
 
-        launcher.Loaded += async (_, _) => await LaunchAsync();
         return launcher;
     }
 }

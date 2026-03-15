@@ -7,13 +7,7 @@ namespace SkillShaper.AutoDj;
 public partial class MainPage : ContentPage
 {
     private readonly AudioLibraryService _libraryService = new();
-    private readonly DeckController[] _decks =
-    {
-        new DeckController(1),
-        new DeckController(2),
-        new DeckController(3),
-        new DeckController(4)
-    };
+    private DeckController[] _decks = [];
 
     private readonly Dictionary<int, DeckUiRefs> _deckUi = new();
     private readonly Random _rng = new();
@@ -34,7 +28,15 @@ public partial class MainPage : ContentPage
 
     public MainPage()
     {
-        InitializeComponent();
+        try
+        {
+            InitializeComponent();
+        }
+        catch (Exception ex)
+        {
+            Android.Util.Log.Error("SkillShaper.AutoDj", $"InitializeComponent failed: {ex}");
+            throw;
+        }
     }
 
     protected override void OnAppearing()
@@ -48,6 +50,14 @@ public partial class MainPage : ContentPage
 
         try
         {
+            _decks =
+            [
+                new DeckController(1),
+                new DeckController(2),
+                new DeckController(3),
+                new DeckController(4)
+            ];
+
             BuildDeckUi();
             _uiBuilt = true;
         }
