@@ -21,19 +21,28 @@ public partial class MainPage : ContentPage
     private CancellationTokenSource? _autoMixCts;
     private readonly Queue<int> _nextDeckOrder = new();
 
-    private const double PhraseBars = 16;
-    private const double FeatureFadeBars = 8;
-    private const double AutoLoopBars = 2;
+    private const double PhraseBars = 8;
+    private const double FeatureFadeBars = 4;
+    private const double AutoLoopBars = 1;
+    private const double BedLoopBars = 0.5;
 
     private const double LeadGain = 1.0;
-    private const double SupportGain = 0.62;
-    private const double MidBedGain = 0.42;
-    private const double LowBedGain = 0.28;
+    private const double SupportGain = 0.82;
+    private const double MidBedGain = 0.62;
+    private const double LowBedGain = 0.46;
 
     public MainPage()
     {
         InitializeComponent();
-        BuildDeckUi();
+
+        try
+        {
+            BuildDeckUi();
+        }
+        catch (Exception ex)
+        {
+            StatusLabel.Text = $"UI init error: {ex.GetType().Name} - {ex.Message}";
+        }
     }
 
     protected override void OnDisappearing()
@@ -278,6 +287,7 @@ public partial class MainPage : ContentPage
 
             await EnsureBackgroundDecksRunningAsync(currentLead);
             await RefreshDecksNearTrackEndAsync(currentLead);
+            ApplyAggressiveBedLoops(currentLead, masterBpm);
 
             var nextDeck = GetNextDeckInRandomRotation(currentLead);
             await EnsureDeckLoadedAsync(nextDeck, _deckUi[nextDeck.DeckId].TitleLabel, forceMidTrackStart: false);
@@ -292,6 +302,7 @@ public partial class MainPage : ContentPage
             StatusLabel.Text = $"Phrase mix Deck {currentLead.DeckId} -> Deck {nextDeck.DeckId}";
             await SmoothRoleTransitionAsync(currentLead, nextDeck, masterBpm, token);
 
+            DisableAllLoops();
             currentLead.DisableLoop();
             nextDeck.DisableLoop();
 
@@ -391,8 +402,8 @@ public partial class MainPage : ContentPage
             return;
         }
 
-        var minStart = (int)(durationMs * 0.35);
-        var maxStart = (int)(durationMs * 0.82);
+        var minStart = (int)(durationMs * 0.45);
+        var maxStart = (int)(durationMs * 0.90);
 
         if (maxStart <= minStart)
         {
@@ -428,7 +439,7 @@ public partial class MainPage : ContentPage
                 continue;
             }
 
-            if (IsNearTrackEnd(deck, thresholdMs: 45_000))
+            if (IsNearTrackEnd(deck, thresholdMs: 75_000))
             {
                 await LoadRandomIntoDeckAsync(deck, _deckUi[deck.DeckId].TitleLabel, true, forceMidTrackStart: true);
             }
@@ -482,6 +493,33 @@ public partial class MainPage : ContentPage
 
         fromDeck.SetLoopWindow(fromStart, loopLengthMs, Dispatcher);
         toDeck.SetLoopWindow(toStart, loopLengthMs, Dispatcher);
+    }
+
+    private void ApplyAggressiveBedLoops(DeckController leadDeck, double masterBpm)
+    {
+        var leadIndex = Array.FindIndex(_decks, d => d.DeckId == leadDeck.DeckId);
+        if (leadIndex < 0)
+        {
+            leadIndex = 0;
+        }
+
+        var supportDeck = _decks[(leadIndex + 1) % _decks.Length];
+        var midDeck = _decks[(leadIndex + 2) % _decks.Length];
+        var bedLoopMs = BarsToMilliseconds(BedLoopBars, masterBpm);
+
+        var supportStart = QuantizeToBeat(supportDeck.GetCurrentPositionMs(), masterBpm);
+        var midStart = QuantizeToBeat(midDeck.GetCurrentPositionMs(), masterBpm);
+
+        supportDeck.SetLoopWindow(supportStart, bedLoopMs, Dispatcher);
+        midDeck.SetLoopWindow(midStart, bedLoopMs, Dispatcher);
+    }
+
+    private void DisableAllLoops()
+    {
+        foreach (var deck in _decks)
+        {
+            deck.DisableLoop();
+        }
     }
 
     private Dictionary<int, double> BuildRoleGainMap(DeckController leadDeck)
